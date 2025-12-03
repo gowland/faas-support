@@ -1,0 +1,42 @@
+@startuml
+
+<style>
+  note {
+      MaximumWidth 110
+  }
+</style>
+
+[UI Service] as ui
+() HTTP
+HTTP -- ui
+
+[Upload Service] as up
+() "Upload Zip File" as upfile
+upfile -- up
+
+database "Log Files By Zip File Name" as logdb <<redis>>
+database "Exception Messages By Zip File Name" as exdb <<redis>>
+
+[Extract Customer Message File] as custextract <<faas>>
+[Extract Exception File] as exextract <<faas>>
+
+[Search Exceptions] as exsearch
+() "Search By Exception Message" as exsearchfunc
+exsearchfunc -- exsearch
+
+[Notify] as notify <<faas>>
+note right of notify
+  Simulate sending notification to support team by writing message to a file
+end note
+
+ui --( upfile
+up --> custextract : send file
+up --> exextract : send file
+custextract --> logdb : log if message exists
+custextract --> notify : notify support if message exists
+exextract --> exdb : log if exception exists
+exextract --( exsearchfunc : search for similar if exception exists
+exsearch --> exdb : search
+exextract --> notify : notify support if exception and matches existing exception(s)
+
+@enduml

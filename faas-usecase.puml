@@ -1,0 +1,30 @@
+@startuml
+
+<style>
+  usecase {
+      MaximumWidth 110
+  }
+</style>
+
+actor User as "User" 
+actor Support as "Technical Support Team"
+
+package "System" {
+
+    usecase upload as "Upload support zip file"
+    usecase logMessage as "Log support message to support system"
+    usecase notifySupport1 as "Notify support team of new message"
+    usecase logException as "Log exception message to support system"
+    usecase notifySupport2 as "Notify support team of duplicate exception message"
+    
+    upload --> logMessage : "Support Message part"
+    upload --> notifySupport1 : "Support Message part"
+    upload --> logException : "Exception part"
+    upload --> notifySupport2 : "Exception part"
+}
+
+User --> upload
+notifySupport1 --> Support
+notifySupport2 --> Support
+
+@enduml
