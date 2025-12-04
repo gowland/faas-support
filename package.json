@@ -1,0 +1,9 @@
+{
+  "name": "faas-support",
+  "version": "1.0.0",
+  "description": "FaaS support system - upload support zip files for processing",
+  "scripts": {
+    "dev": "docker-compose up",
+    "build": "docker-compose build"
+  }
+}

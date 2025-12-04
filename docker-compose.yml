@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  ui-service:
+    build: ./services/ui-service
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+    volumes:
+      - ./services/ui-service:/app
+      - /app/node_modules
+    depends_on:
+      - upload-service
+
+  upload-service:
+    build: ./services/upload-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - CUSTOMER_MESSAGE_PORT=3001
+      - UPLOAD_DIR=./uploads
+    volumes:
+      - ./services/upload-service:/app
+      - /app/node_modules
+      - ./uploads:/app/uploads
+    command: npm run dev
