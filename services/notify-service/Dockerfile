@@ -1,4 +1,4 @@
-﻿FROM node:18-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
@@ -8,8 +8,6 @@ RUN npm install
 
 COPY src ./src
 
-RUN mkdir -p uploads notifications
-
-EXPOSE 3001
+EXPOSE 3003
 
 CMD ["npm", "run", "dev"]

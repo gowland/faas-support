@@ -22,8 +22,39 @@ services:
       - NODE_ENV=development
       - CUSTOMER_MESSAGE_PORT=3001
       - UPLOAD_DIR=./uploads
+      - SEARCH_EXCEPTIONS_URL=http://search-exceptions:3002
+      - NOTIFY_SERVICE_URL=http://notify-service:3003
     volumes:
       - ./services/upload-service:/app
       - /app/node_modules
       - ./uploads:/app/uploads
+    command: npm run dev
+    depends_on:
+      - search-exceptions
+      - notify-service
+
+  search-exceptions:
+    build: ./services/search-exceptions
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - EXCEPTION_SEARCH_PORT=3002
+    volumes:
+      - ./services/search-exceptions:/app
+      - /app/node_modules
+    command: npm run dev
+
+  notify-service:
+    build: ./services/notify-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - NOTIFY_PORT=3003
+      - NOTIFICATIONS_DIR=./notifications
+    volumes:
+      - ./services/notify-service:/app
+      - /app/node_modules
+      - ./notifications:/app/notifications
     command: npm run dev

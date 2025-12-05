@@ -5,9 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const unzipper = require('unzipper');
 const cors = require('cors');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.CUSTOMER_MESSAGE_PORT || 3001;
+const SEARCH_EXCEPTIONS_URL = process.env.SEARCH_EXCEPTIONS_URL || 'http://localhost:3002';
+const NOTIFY_SERVICE_URL = process.env.NOTIFY_SERVICE_URL || 'http://localhost:3003';
 
 // Middleware
 app.use(cors());
@@ -31,6 +34,144 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
+/**
+ * Make HTTP POST request
+ * @param {string} url - Full URL to POST to
+ * @param {object} data - Data to send as JSON
+ */
+function makeHttpRequest(url, data) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch {
+          resolve({ raw: body });
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.warn(`  ⚠️  Request to ${url} failed: ${error.message}`);
+      resolve({ error: error.message });
+    });
+
+    req.write(JSON.stringify(data));
+    req.end();
+  });
+}
+
+/**
+ * Extract text content from file
+ * @param {string} filePath - Path to file
+ * @returns {string} File content
+ */
+function extractFileContent(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Process extracted files for messages and exceptions
+ * @param {string} extractDir - Directory containing extracted files
+ * @param {string} fileName - Original zip file name
+ */
+async function processExtractedFiles(extractDir, fileName) {
+  console.log(`\n⚙️  Processing extracted files...`);
+
+  const files = await fs.promises.readdir(extractDir);
+  
+  // Look for support message file
+  const messageFile = files.find(f => 
+    f.toLowerCase().includes('message') || f.toLowerCase().includes('support')
+  );
+  
+  // Look for exception file
+  const exceptionFile = files.find(f => 
+    f.toLowerCase().includes('exception') || f.toLowerCase().includes('error') || f.toLowerCase().includes('log')
+  );
+
+  // Process support message
+  if (messageFile) {
+    const messageContent = extractFileContent(path.join(extractDir, messageFile));
+    if (messageContent) {
+      console.log(`\n📧 Support Message Found:`);
+      console.log(`  File: ${messageFile}`);
+      console.log(`  Content: ${messageContent.substring(0, 100)}...`);
+      
+      // Notify support team
+      await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
+        type: 'message',
+        title: 'New Support Message',
+        message: messageContent,
+        zipFile: fileName,
+        details: { file: messageFile }
+      });
+    }
+  }
+
+  // Process exception
+  if (exceptionFile) {
+    const exceptionContent = extractFileContent(path.join(extractDir, exceptionFile));
+    if (exceptionContent) {
+      console.log(`\n⚠️  Exception Found:`);
+      console.log(`  File: ${exceptionFile}`);
+      console.log(`  Content: ${exceptionContent.substring(0, 100)}...`);
+      
+      // Search for similar exceptions
+      const searchResult = await makeHttpRequest(`${SEARCH_EXCEPTIONS_URL}/exceptions`, {
+        message: exceptionContent,
+        zipFile: fileName
+      });
+
+      if (searchResult.isDuplicate) {
+        console.log(`\n🔔 Duplicate Exception Detected!`);
+        console.log(`  This is occurrence #${searchResult.duplicateCount}`);
+        
+        // Notify support team of duplicate
+        await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
+          type: 'duplicate_exception',
+          title: 'Duplicate Exception Detected',
+          message: `Exception has been seen ${searchResult.duplicateCount} times before`,
+          zipFile: fileName,
+          details: { 
+            file: exceptionFile,
+            exception: exceptionContent.substring(0, 100)
+          }
+        });
+      } else {
+        console.log(`\n✨ New Exception`);
+        
+        // Notify support team of new exception
+        await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
+          type: 'new_exception',
+          title: 'New Exception Logged',
+          message: exceptionContent,
+          zipFile: fileName,
+          details: { file: exceptionFile }
+        });
+      }
+    }
+  }
+}
+
 
 /**
  * Log zip file contents
@@ -77,6 +218,7 @@ async function extractZipFile(filePath, fileName) {
       .on('close', async () => {
         try {
           await logZipContents(extractDir, fileName);
+          await processExtractedFiles(extractDir, fileName);
           resolve(extractDir);
         } catch (error) {
           reject(error);

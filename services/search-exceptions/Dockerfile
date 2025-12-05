@@ -1,16 +1,13 @@
-FROM node:18-alpine
+﻿FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY services/search-exceptions/package*.json ./
+COPY package*.json ./
 
-# Install dependencies
-RUN npm install --omit=dev
+RUN npm install
 
-# Copy source code
-COPY services/search-exceptions/app.js ./
+COPY src ./src
 
-EXPOSE 3004
+EXPOSE 3002
 
-CMD ["node", "app.js"]
+CMD ["npm", "run", "dev"]
