@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   ui-service:
     build: ./services/ui-service
     ports:
@@ -40,10 +53,14 @@ services:
     environment:
       - NODE_ENV=development
       - EXCEPTION_SEARCH_PORT=3002
+      - REDIS_URL=redis://redis:6379
     volumes:
       - ./services/search-exceptions:/app
       - /app/node_modules
     command: npm run dev
+    depends_on:
+      redis:
+        condition: service_healthy
 
   notify-service:
     build: ./services/notify-service
@@ -58,3 +75,6 @@ services:
       - /app/node_modules
       - ./notifications:/app/notifications
     command: npm run dev
+
+volumes:
+  redis-data:

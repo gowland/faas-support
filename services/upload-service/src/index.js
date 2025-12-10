@@ -90,6 +90,13 @@ function extractFileContent(filePath) {
 
 /**
  * Process extracted files for messages and exceptions
+ * 
+ * WORKFLOW 1: If file contains a message from user -> notify support
+ * WORKFLOW 2: If file contains exception message:
+ *   1. Search Redis for duplicates
+ *   2. Notify support
+ *   3. Store the exception in Redis
+ * 
  * @param {string} extractDir - Directory containing extracted files
  * @param {string} fileName - Original zip file name
  */
@@ -108,15 +115,17 @@ async function processExtractedFiles(extractDir, fileName) {
     f.toLowerCase().includes('exception') || f.toLowerCase().includes('error') || f.toLowerCase().includes('log')
   );
 
-  // Process support message
+  // ===== WORKFLOW 1: Process support message =====
+  // If file contains message -> notify support
   if (messageFile) {
     const messageContent = extractFileContent(path.join(extractDir, messageFile));
     if (messageContent) {
-      console.log(`\n📧 Support Message Found:`);
+      console.log(`\n📧 WORKFLOW 1: Support Message Found`);
       console.log(`  File: ${messageFile}`);
       console.log(`  Content: ${messageContent.substring(0, 100)}...`);
+      console.log(`  Action: Notifying support team...`);
       
-      // Notify support team
+      // Notify support team about new message
       await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
         type: 'message',
         title: 'New Support Message',
@@ -124,40 +133,56 @@ async function processExtractedFiles(extractDir, fileName) {
         zipFile: fileName,
         details: { file: messageFile }
       });
+      
+      console.log(`  ✅ Support notified`);
     }
   }
 
-  // Process exception
+  // ===== WORKFLOW 2: Process exception message =====
+  // If file contains exception:
+  // 1. Search for duplicates in Redis
+  // 2. Notify support
+  // 3. Store the exception
   if (exceptionFile) {
     const exceptionContent = extractFileContent(path.join(extractDir, exceptionFile));
     if (exceptionContent) {
-      console.log(`\n⚠️  Exception Found:`);
+      console.log(`\n⚠️  WORKFLOW 2: Exception Found`);
       console.log(`  File: ${exceptionFile}`);
       console.log(`  Content: ${exceptionContent.substring(0, 100)}...`);
       
-      // Search for similar exceptions
-      const searchResult = await makeHttpRequest(`${SEARCH_EXCEPTIONS_URL}/exceptions`, {
+      // Step 1: Search for duplicates in Redis
+      console.log(`  Step 1: Searching Redis for duplicates...`);
+      const searchResult = await makeHttpRequest(`${SEARCH_EXCEPTIONS_URL}/exceptions/search`, {
+        query: exceptionContent
+      });
+
+      // Step 2 & 3: Notify support and store the exception
+      // The POST /exceptions endpoint both stores AND searches
+      console.log(`  Step 2 & 3: Storing exception in Redis and notifying support...`);
+      const storeResult = await makeHttpRequest(`${SEARCH_EXCEPTIONS_URL}/exceptions`, {
         message: exceptionContent,
         zipFile: fileName
       });
 
-      if (searchResult.isDuplicate) {
-        console.log(`\n🔔 Duplicate Exception Detected!`);
-        console.log(`  This is occurrence #${searchResult.duplicateCount}`);
+      if (storeResult.isDuplicate) {
+        console.log(`  🔔 DUPLICATE DETECTED - This is occurrence #${storeResult.duplicateCount}`);
         
-        // Notify support team of duplicate
+        // Notify support team of duplicate exception
         await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
           type: 'duplicate_exception',
-          title: 'Duplicate Exception Detected',
-          message: `Exception has been seen ${searchResult.duplicateCount} times before`,
+          title: `Duplicate Exception (Occurrence #${storeResult.duplicateCount})`,
+          message: exceptionContent,
           zipFile: fileName,
           details: { 
             file: exceptionFile,
+            duplicateCount: storeResult.duplicateCount,
             exception: exceptionContent.substring(0, 100)
           }
         });
+        
+        console.log(`  ✅ Support notified of duplicate`);
       } else {
-        console.log(`\n✨ New Exception`);
+        console.log(`  ✨ NEW EXCEPTION - First time seeing this message`);
         
         // Notify support team of new exception
         await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
@@ -167,9 +192,16 @@ async function processExtractedFiles(extractDir, fileName) {
           zipFile: fileName,
           details: { file: exceptionFile }
         });
+        
+        console.log(`  ✅ Support notified of new exception`);
       }
+      
+      // Exception is now stored in Redis (from the POST /exceptions call)
+      console.log(`  ✅ Exception stored in Redis`);
     }
   }
+
+  console.log(`\n✅ Processing complete\n`);
 }
 
 
