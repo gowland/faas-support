@@ -21,6 +21,7 @@ if (!fs.existsSync(notificationsDir)) {
  * Write notification to file
  * @param {string} type - Type of notification (message, exception, duplicate)
  * @param {object} data - Notification data
+ * @returns {object} Object containing fileName and filePath
  */
 function writeNotificationToFile(type, data) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -36,7 +37,7 @@ function writeNotificationToFile(type, data) {
 
   fs.writeFileSync(filePath, JSON.stringify(notification, null, 2));
 
-  return filePath;
+  return { fileName, filePath };
 }
 
 /**
@@ -61,7 +62,7 @@ app.post('/notify', (req, res) => {
       details: details || {}
     };
 
-    const filePath = writeNotificationToFile(type, notificationData);
+    const result = writeNotificationToFile(type, notificationData);
 
     console.log(`\n🔔 Notification Sent`);
     console.log(`  Type: ${type}`);
@@ -70,14 +71,14 @@ app.post('/notify', (req, res) => {
     if (zipFile) {
       console.log(`  Zip File: ${zipFile}`);
     }
-    console.log(`  Saved to: ${path.relative(process.cwd(), filePath)}`);
+    console.log(`  Saved to: ${path.relative(process.cwd(), result.filePath)}`);
     console.log();
 
     res.json({
       success: true,
       message: 'Notification sent',
-      file: fileName,
-      filePath
+      file: result.fileName,
+      filePath: result.filePath
     });
   } catch (error) {
     console.error('Error sending notification:', error);

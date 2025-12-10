@@ -1,0 +1,4 @@
+{
+  "watch": ["src"],
+  "ignore": ["notifications/**", "node_modules/**"]
+}

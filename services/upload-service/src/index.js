@@ -45,7 +45,7 @@ function makeHttpRequest(url, data) {
     const parsedUrl = new URL(url);
     const options = {
       hostname: parsedUrl.hostname,
-      port: parsedUrl.port,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
       path: parsedUrl.pathname + parsedUrl.search,
       method: 'POST',
       headers: {
@@ -53,7 +53,10 @@ function makeHttpRequest(url, data) {
       }
     };
 
+    console.log(`  📡 Connecting to ${parsedUrl.hostname}:${options.port}...`);
+
     const req = http.request(options, (res) => {
+      console.log(`  ✓ Connected, got response ${res.statusCode}`);
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
       res.on('end', () => {
@@ -70,6 +73,7 @@ function makeHttpRequest(url, data) {
       resolve({ error: error.message });
     });
 
+    console.log(`  📤 Sending request...`);
     req.write(JSON.stringify(data));
     req.end();
   });
@@ -140,9 +144,8 @@ async function processExtractedFiles(extractDir, fileName) {
 
   // ===== WORKFLOW 2: Process exception message =====
   // If file contains exception:
-  // 1. Search for duplicates in Redis
-  // 2. Notify support
-  // 3. Store the exception
+  // 1. Store the exception in Redis
+  // 2. Notify support based on whether it's a duplicate
   if (exceptionFile) {
     const exceptionContent = extractFileContent(path.join(extractDir, exceptionFile));
     if (exceptionContent) {
@@ -150,15 +153,9 @@ async function processExtractedFiles(extractDir, fileName) {
       console.log(`  File: ${exceptionFile}`);
       console.log(`  Content: ${exceptionContent.substring(0, 100)}...`);
       
-      // Step 1: Search for duplicates in Redis
-      console.log(`  Step 1: Searching Redis for duplicates...`);
-      const searchResult = await makeHttpRequest(`${SEARCH_EXCEPTIONS_URL}/exceptions/search`, {
-        query: exceptionContent
-      });
-
-      // Step 2 & 3: Notify support and store the exception
-      // The POST /exceptions endpoint both stores AND searches
-      console.log(`  Step 2 & 3: Storing exception in Redis and notifying support...`);
+      // Store the exception in Redis and get duplicate detection result
+      // The POST /exceptions endpoint stores AND detects duplicates
+      console.log(`  Storing exception in Redis and checking for duplicates...`);
       const storeResult = await makeHttpRequest(`${SEARCH_EXCEPTIONS_URL}/exceptions`, {
         message: exceptionContent,
         zipFile: fileName
@@ -168,7 +165,7 @@ async function processExtractedFiles(extractDir, fileName) {
         console.log(`  🔔 DUPLICATE DETECTED - This is occurrence #${storeResult.duplicateCount}`);
         
         // Notify support team of duplicate exception
-        await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
+        const duplicateNotify = await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
           type: 'duplicate_exception',
           title: `Duplicate Exception (Occurrence #${storeResult.duplicateCount})`,
           message: exceptionContent,
@@ -180,12 +177,16 @@ async function processExtractedFiles(extractDir, fileName) {
           }
         });
         
-        console.log(`  ✅ Support notified of duplicate`);
+        if (duplicateNotify.error) {
+          console.log(`  ⚠️  Failed to notify support of duplicate: ${duplicateNotify.error}`);
+        } else {
+          console.log(`  ✅ Support notified of duplicate`);
+        }
       } else {
         console.log(`  ✨ NEW EXCEPTION - First time seeing this message`);
         
         // Notify support team of new exception
-        await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
+        const newExceptionNotify = await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
           type: 'new_exception',
           title: 'New Exception Logged',
           message: exceptionContent,
@@ -193,7 +194,11 @@ async function processExtractedFiles(extractDir, fileName) {
           details: { file: exceptionFile }
         });
         
-        console.log(`  ✅ Support notified of new exception`);
+        if (newExceptionNotify.error) {
+          console.log(`  ⚠️  Failed to notify support of new exception: ${newExceptionNotify.error}`);
+        } else {
+          console.log(`  ✅ Support notified of new exception`);
+        }
       }
       
       // Exception is now stored in Redis (from the POST /exceptions call)

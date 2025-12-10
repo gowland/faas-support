@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const redis = require('redis');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.EXCEPTION_SEARCH_PORT || 3002;
@@ -38,6 +39,14 @@ function normalizeMessage(message) {
 }
 
 /**
+ * Create a hash of the normalized message for use as a Redis key
+ */
+function hashMessage(message) {
+  const normalized = normalizeMessage(message);
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+}
+
+/**
  * POST /exceptions - Store a new exception message
  * Body: { message: string, zipFile: string }
  */
@@ -49,8 +58,8 @@ app.post('/exceptions', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: message, zipFile' });
     }
 
-    const normalized = normalizeMessage(message);
-    const key = `exception:${normalized}`;
+    const messageHash = hashMessage(message);
+    const key = `exception:${messageHash}`;
     
     // Get current count
     const countStr = await redisClient.get(`${key}:count`);
@@ -78,11 +87,12 @@ app.post('/exceptions', async (req, res) => {
     // Add to sorted set for tracking all exceptions (sorted by timestamp)
     await redisClient.zAdd('exceptions:all', [{
       score: Date.now(),
-      value: normalized
+      value: messageHash
     }]);
 
     console.log(`\n📋 Exception Stored`);
-    console.log(`  Message: ${message}`);
+    console.log(`  Message: ${message.substring(0, 100)}...`);
+    console.log(`  Hash: ${messageHash}`);
     console.log(`  Zip File: ${zipFile}`);
     console.log(`  Count: ${count}`);
     console.log();
@@ -114,8 +124,8 @@ app.get('/exceptions/search', async (req, res) => {
       return res.status(400).json({ error: 'Missing required query parameter: query' });
     }
 
-    const normalized = normalizeMessage(query);
-    const key = `exception:${normalized}`;
+    const messageHash = hashMessage(query);
+    const key = `exception:${messageHash}`;
     
     // Try to get the exception from Redis
     const exceptionData = await redisClient.hGetAll(key);
@@ -155,13 +165,13 @@ app.get('/exceptions', async (req, res) => {
     const allExceptions = await redisClient.zRangeByScore('exceptions:all', '-inf', '+inf');
     
     const exceptions = [];
-    for (const normalized of allExceptions) {
-      const key = `exception:${normalized}`;
+    for (const messageHash of allExceptions) {
+      const key = `exception:${messageHash}`;
       const exceptionData = await redisClient.hGetAll(key);
       const countStr = await redisClient.get(`${key}:count`);
       
       exceptions.push({
-        normalized,
+        hash: messageHash,
         count: countStr ? parseInt(countStr) : 0,
         data: exceptionData
       });
