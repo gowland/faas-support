@@ -184,21 +184,7 @@ async function processExtractedFiles(extractDir, fileName) {
         }
       } else {
         console.log(`  ✨ NEW EXCEPTION - First time seeing this message`);
-        
-        // Notify support team of new exception
-        const newExceptionNotify = await makeHttpRequest(`${NOTIFY_SERVICE_URL}/notify`, {
-          type: 'new_exception',
-          title: 'New Exception Logged',
-          message: exceptionContent,
-          zipFile: fileName,
-          details: { file: exceptionFile }
-        });
-        
-        if (newExceptionNotify.error) {
-          console.log(`  ⚠️  Failed to notify support of new exception: ${newExceptionNotify.error}`);
-        } else {
-          console.log(`  ✅ Support notified of new exception`);
-        }
+        // No notification sent for new exceptions (only duplicates are reported)
       }
       
       // Exception is now stored in Redis (from the POST /exceptions call)
